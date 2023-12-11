@@ -105,5 +105,18 @@ Cliquez sur **Create Policy** pour valider.
 
 ## Injection des secrets dans une application
 
-Une fois le vault configurer, nous alllons créer une application et la configurer afin qu'elle puisse obtenir les secrets.
+Une fois le vault configuré, nous allons créer une application et la configurer afin qu'elle puisse obtenir les secrets. (dossier vault repo sessions gratuites)
 
+## Bonnes pratiques d'utilisation de vault
+
+**Rotation Régulière des Secrets** : Mettez en place des politiques de rotation automatisées pour minimiser les risques en cas de compromission potentielle.
+
+**Surveillance et Audit** : Activez une surveillance rigoureuse et analysez régulièrement les journaux d'audit pour détecter toute activité suspecte.
+
+**Intégration avec les Systèmes d'Identité** : Connectez Vault à vos systèmes d'identité existants pour une gestion centralisée des accès et une cohérence avec les politiques de l'entreprise.
+
+**Mises à Jour Proactives** : Maintenez Vault à jour avec les dernières versions pour bénéficier de fonctionnalités améliorées et des correctifs de sécurité.
+
+**Politiques d'Accès Granulaires** : Définissez des politiques d'accès minimales pour réduire les risques liés à des autorisations excessives.
+
+**Plan de Reprise d'Activité et Haute Disponibilité** : Élaborez un plan de reprise d'activité solide et assurez une disponibilité continue avec des configurations hautement disponibles.

@@ -13,9 +13,9 @@ const run = async () => {
 
     vault.token = result.auth.client_token
 
-    const { data } = await vault.read("secret/data/secret_store/my_app");
+    const { data } = await vault.read("secret_store/data/my_app");
 
-    console.log(data);
+    console.log(data.data.api_password);
 };  
 
 
