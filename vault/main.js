@@ -2,7 +2,7 @@ require('dotenv').config()
 
 const vault = require("node-vault")({
     apiVersion: "v1",
-    endpoint: "http://127.0.0.1:8201",
+    endpoint: "http://127.0.0.1:8256",
 });
 
 const run = async () => {
