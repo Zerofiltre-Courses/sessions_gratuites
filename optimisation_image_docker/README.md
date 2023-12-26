@@ -258,6 +258,14 @@ Allons dans l'onglet vulnérabilités pour obtenir la liste des vulnérabilités
 
 En fonction de ce que vous obtenez, vous saurez comment corriger les failles.
 
+Vous pouvez aussi utiliser les commandes du docker CLI:
+
+```bash
+docker scout cves hashicorp/vault
+```
+
+Par exemple pour scanner l'image d'Hashicorp Vault.
+
 ## C. Bonnes Pratiques et Conseils Supplémentaires
 
 L'optimisation de la gestion des fichiers temporaires et du cache dans vos Dockerfiles est une pratique souvent négligée mais d'une importance capitale. Docker utilise le cache des couches pour accélérer les constructions en évitant la répétition d'étapes inchangées. Cependant, il est essentiel de comprendre comment ce cache fonctionne et d'en tirer parti judicieusement.
