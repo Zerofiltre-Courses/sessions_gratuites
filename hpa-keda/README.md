@@ -177,87 +177,45 @@ Pour atteindre cette objectif avec HPA, nous devons configurer  notre système c
 
 ![hpa-custom](https://i.ibb.co/XVMGnj1/rabbit-hpa.png)
 
-**Explication:**
+**Explication:**aRabbitMQ va exposer des métriques qui seront stockées dans Prometheus. La HPA exploitera donc ces métriques pour mettre en échelle notre application via sa fonctionnalité Custom Metrics. On aura également un dashboard grafana pour observer l'évolution des messages dans la file.
 
-RabbitMQ va exposer des métriques qui seront stockées dans Prometheus. La HPA exploitera donc ces métriques pour mettre en échelle notre application via sa fonctionnalité Custom Metrics. On aura également un dashboard grafana pour observer l'évolution des messages dans la file.
-
-- Premièrement, installez Prometheus dans votre cluster si ceci n'est pas encore fait, suivez l'article suivant: 
-
-Ajoutez et mettez à jour le repos local avec les commandes suivantes
-
-```bash
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo update
-```
-Puis créez un namespace monitoring et installez la stack prometheus.
-```bash
-kubectl create ns monitoring
-helm install kube-prom-stack prometheus-community/kube-prometheus-stack -n monitoring
-```
-
-- Puis installez l'adaptateur qui a pour rôle de créer des objets CustomMetrics et ExternalMetrics. Ces objets auront pour rôle de permettre au cluster d'exploiter vos métriques prometheus pour le HPA.
-
-```bash
-helm install prom-adpater prometheus-community/prometheus-adapter
-```
-
-- Ensuite, ajoutons un scrape au niveau de Prometheus pour l'indiquer où chercher les métriques de Rabbitmq. Dans votre fichier values.yaml (ref: installation de Prometheus) ajoutez les lignes suivantes
-
-```yaml
-- job_name: rabbitmq-exporter
-  scrape_interval: 2m
-  scrape_timeout: 1m
-  metrics_path: '/metrics'
-  scheme: http
-  static_configs:
-    - targets: ["rabbitmq.autoscale-pdf-generator:15692"]
-```
-
-Nous pouvons maintenant créer notre HPA. Créez un fichier hpa.yaml
-
-```yaml
-apiVersion: autoscaling/v2beta2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: hpa
-  namespace: autoscale-pdf-generator
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: rabbitmq-consumer
-  minReplicas: 1
-  maxReplicas: 10
-  metrics:
-    - type: External
-      external:
-        metricName: rabbitmq_queue_messages_ready
-        targetAverageValue: 100
-
-et l'appliquer en executant la commande
-```bash
-kubectl apply hpa.yaml
-```
-
-**Explication:**
-
--   `scaleTargetRef` : Indique la référence vers le déploiement auquel la HPA est associée. Dans ce cas, il s'agit d'un déploiement portant le nom `php-apache`.
-    
--   `minReplicas` : Définit le nombre minimal de répliques (pods) que la HPA peut maintenir, ici fixé à 1.
-    
--   `maxReplicas` : Définit le nombre maximal de répliques (pods) que la HPA peut créer, ici fixé à 10.
-    
-Maintenant que notre configuration est comprise, exécutons notre code avec la commande:
-
-```bash
-kubectl apply -h hpa-config.yaml
-```
-
+Comme vous pouvez le constater, l'implémentation de cette architecture est complexe
 
 
 ## **KEDA: la solution miracle**
 
+![enter image description here](https://i.ibb.co/3Mhxwng/keda-arch.png)
+
 C'est là que KEDA, l'acronyme pour Kubernetes-based Event-Driven Autoscaling, entre en jeu comme une solution vraiment intéressante. KEDA offre une approche basée sur des événements pour ajuster automatiquement l'échelle des applications, offrant ainsi une réactivité dynamique aux changements dans la charge de travail.
+
+Les composant principaux d'une architecture KEDA sont les suivants:
+
+**ScaledObject:** Un ScaledObject est une ressource CRD (Custom Resource Definition) définie par Keda. Il représente un déploiement Kubernetes que Keda peut mettre à l'échelle. Un ScaledObject spécifie :
+
+-   Le nom du déploiement à mettre à l'échelle
+-   La métrique à utiliser pour le déclenchement de la mise à l'échelle
+-   La stratégie de mise à l'échelle (horizontale ou verticale)
+-   Les limites de mise à l'échelle (min et max)
+
+**Controller** Le composant principal de Keda. Il s'agit d'un contrôleur qui surveille les ScaledObjects et effectue les mises à l'échelle en fonction des metrics et des définitions de mise à l'échelle.
+
+**4. Metrics Adapter:** Un adaptateur de métrique est un composant qui convertit une métrique externe en un format que Keda peut comprendre. Keda prend en charge plusieurs adaptateurs de métriques pour différents types de sources de métriques, telles que Prometheus, Azure Monitor, et AWS CloudWatch.
+
+**5. Horizontal Pod Autoscaler (HPA):** Le HPA est un contrôleur Kubernetes intégré qui peut mettre à l'échelle automatiquement les pods en fonction de l'utilisation des ressources. Keda peut utiliser le HPA pour effectuer des mises à l'échelle horizontales.
+
+**6. External Trigger Source:** Keda peut également être déclenché par des sources externes, telles que des événements, des webhooks ou des changements de configuration.
+
+**7. Workload:** La charge de travail est l'application ou le service qui est mis à l'échelle par Keda défini dans le ScaledObject.
+
+**Fonctionnement de Keda:**
+
+2.  Un ScaledObject est défini pour un déploiement Kubernetes.
+4.  Keda surveille la métrique spécifiée dans le ScaledObject via l'adaptateur de métrique.
+6.  Lorsque la métrique atteint un seuil défini, Keda déclenche une mise à l'échelle.
+8.  Keda peut utiliser le HPA pour effectuer une mise à l'échelle horizontale du déploiement.
+10.  Keda peut également être déclenché par des sources externes pour effectuer des mises à l'échelle.
+
+### Pourquoi utiliser KEDA
 
 1.  **Adaptabilité aux Événements :**  Dans notre cas, KEDA  peut tirer profit des événements, comme les messages dans une file d'attente RabbitMQ. Cette approche orientée événements permet à KEDA d'ajuster automatiquement le nombre de pods en fonction de l'activité des messages, assurant ainsi une évolutivité adaptée.
     
@@ -265,9 +223,9 @@ C'est là que KEDA, l'acronyme pour Kubernetes-based Event-Driven Autoscaling, e
     
 3.  **Facilité de Configuration :** L'une de ses grandes forces est qu'il s'intègre naturellement avec les déploiements existants, sans nécessiter de changements majeurs dans le code de l'application. Cela simplifie grandement la mise en œuvre de l'autoscaling, rendant la solution robuste et facile à adopter.
    
-## **Implémentation de KEDA**
+### **Implémentation de KEDA**
 
-### Installation 
+#### Installation 
 
 - keda avec helm
 
@@ -287,10 +245,6 @@ microk8s enable keda
 ```
 Elles vont activer les extensions keda et dns.
 
-- Rabbitmq
-
-
-
 - Configuration keda
 
 Maintenant, nous allons entrer dans le vif du sujet en configuration keda
@@ -302,9 +256,9 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: rabbitmq-consumer-secret
-  namespace: default
+  namespace: autoscale-pdf-generator
 data:
-  RabbitMqHost: YW1xcDovL3JhYmJpdG1xLnJhYmJpdG1xLnN2Yy5jbHVzdGVyLmxvY2FsOjU2NzI=
+  RabbitMqHost: YW1xcDovL3JhYmJpdG1xLmF1dG9zY2FsZS1wZGYtZ2VuZXJhdG9yLnN2Yy5jbHVzdGVyLmxvY2FsOjU2NzI=
 
 ---
 apiVersion: keda.sh/v1alpha1
@@ -358,18 +312,6 @@ kubectl get deployment rabbitmq-consumer --watch
 
 Vous remarquerez l'augmentation du nombre de pods.
 
-## **HPA vs KEDA
+## **HPA vs KEDA**
 
--   **Cas d'utilisation**:
-    
-    -   Utilisez KEDA lorsque vous avez besoin d'autoscaling basé sur des événements spécifiques, comme le traitement de messages dans des files d'attente ou des flux de données.
-    -   Utilisez HPA pour l'autoscaling basé sur des métriques de ressources standard dans des applications plus générales (mémoire, cpu, disque, etc).
-    - 
--   **Flexibilité**:
-    
-    -   KEDA offre une plus grande flexibilité en permettant d'ajouter des sources d'événements personnalisées provenant de diverses sources (cloudwatch, kafka, prometheus, etc)
-    -   HPA est limité aux métriques de ressources définies par Kubernetes.
--   **Intégration**:
-    -   KEDA peut être utilisé en conjonction avec HPA pour fournir un autoscaling basé sur des événements et des métriques de ressources.
--   **Complexité**:
-    -   KEDA peut être plus complexe à configurer en raison de sa flexibilité accrue.
+HPA reste un outil puissant mais KEDA vient ajouter une couche d'abstraction qui nous permet de configurer facilement la scalabilité automatique de notre application.
