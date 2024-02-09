@@ -13,13 +13,223 @@ C'est là que les "magiciens" Kubernetes entrent en scène avec deux baguettes d
 
 Plongeons dans cet article pour démystifier ces deux magiciens et découvrir comment ils abordent la magie de la scalabilité horizontale automatique sur Kubernetes, avec pour objectif ultime de créer une symphonie sans faille dans notre orchestre d'applications conteneurisées.
 
-## Mise en situation
 
-Supposons que nous avons une application qui génère des PDF en ligne avec l'architecture suivante:
+## Cas d'utilisation 1: Architecture basique(Serveur Web)
 
-![enter image description here](https://i.ibb.co/z8Rbsqn/rabbitmq-beginners-updated.png)
+Nous allons déployer un serveur web apache dans notre cluster
 
-Comme vous pouvez le constater, nous utilisons une architecture orienté évènement avec un MessageBroker qui est RabbitMQ. Lorsqu'on utilisateur souhaite générer un pdf, la requête est envoyé dans une file d'attente qui est géré par le message broker. Puis, nous avons des consumer qui viennent s'occuper du traitement de la requête à tour de rôle. Afin d'éviter un ralentissement de notre application, nous souhaitons augmenter le nombre de consumer en fonction du nombre de requête dans la file. Comme mentionné plus haut, sur k8s nous avons deux solutions le HPA et le KEDA.
+![apache-architecture](https://i.ibb.co/2MjRTQ5/apache.png)
+
+**Implémentation: serveur web**
+
+Créez un fichier *apache-server.yaml* avec le contenu suivant:
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: wizy-server
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: php-apache
+  namespace: wizy-server
+spec:
+  selector:
+    matchLabels:
+      run: php-apache
+  template:
+    metadata:
+      labels:
+        run: php-apache
+    spec:
+      containers:
+      - name: php-apache
+        image: registry.k8s.io/hpa-example
+        ports:
+        - containerPort: 80
+        resources:
+          limits:
+            cpu: 500m
+          requests:
+            cpu: 200m
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: php-apache
+  namespace: wizy-server
+  labels:
+    run: php-apache
+spec:
+  ports:
+  - port: 80
+  selector:
+    run: php-apache
+```
+
+Puis appliquer cette configuration avec la commande:
+
+```bash
+kubectl apply -f apache-server.yaml
+``` 
+
+Puis vérifiez l'état du déploiement en vérifiant le statut des pods via cette commande
+
+```bash
+kubectl get pods -n wizy-server
+``` 
+Notre serveur prêt, nous allons le mettre à l'échelle en utilisant nos deux méthodes KEDA et HPA .
+
+
+### **HPA: la solution native**
+
+![enter image description here](https://i.ibb.co/nm9qRBK/hpa-arch.png)
+
+Le Horizontal Pod Autoscaler (HPA) fonctionne en surveillant les métriques spécifiées, telles que l'utilisation du CPU, de la mémoire ou même des métriques personnalisées stockés dans une base de données comme Prometheus. Si la charge de travail augmente au-delà d'un seuil défini, le HPA augmentera le nombre de pods pour gérer la charge supplémentaire. De même, si la charge diminue, il peut réduire le nombre de pods pour économiser des ressources.
+
+#### **Implémentation 1**
+
+![apache-hpa](https://i.ibb.co/qxBhZPH/apache-hpa.png)
+
+Dans le fichier *apache-server.yaml*, ajoutez le code suivant:
+
+```yaml
+---
+apiVersion: autoscaling/v1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: php-apache-hpa
+  namespace: wizy-server
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: php-apache
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 50
+```
+
+Explication:
+  
+Ce code définit un mécanisme d'auto-évolutivité horizontale (Horizontal Pod Autoscaler ou HPA) dans Kubernetes pour surveiller et ajuster automatiquement le nombre de pods d'un déploiement spécifique, `php-apache`, en fonction de l'utilisation de la CPU. Il établit des bornes pour le nombre de pods (1 minimum, 10 maximum) et vise à maintenir une utilisation de la CPU autour de 50%. Ainsi, l'HPA garantit une utilisation efficace des ressources tout en répondant dynamiquement à la demande applicative.
+
+Maintenant nous pouvons appliquer notre hpa
+```bash
+kubectl apply -f apache-server.yaml
+``` 
+
+et simuler les requêtes sur notre serveur apache avec cette commande
+
+```shell
+kubectl run -i -n wizy-server --tty load-generator --rm --image=busybox:1.28 --restart=Never -- /bin/sh -c "while sleep 0.01; do wget -q -O- http://php-apache; done"
+```
+
+Maintenant exécutez la commande suivante pour observer la magie opérer 
+
+```bash
+kubectl get hpa php-apache-hpa -n wizy-server --watch
+```
+
+Après environ une minute, vous devriez constater une augmentation de la charge CPU et du nombre de pods
+
+
+
+## KEDA
+
+![enter image description here](https://i.ibb.co/3Mhxwng/keda-arch.png)
+
+KEDA, l'acronyme pour Kubernetes-based Event-Driven Autoscaling est une solution vraiment intéressante. KEDA offre une approche basée sur des événements pour ajuster automatiquement l'échelle des applications, offrant ainsi une réactivité dynamique aux changements dans la charge de travail.
+
+**ScaledObject:** Un ScaledObject est une ressource CRD (Custom Resource Definition) définie par Keda. Il représente un déploiement Kubernetes que Keda peut mettre à l'échelle. Un ScaledObject spécifie :
+
+-   Le nom du déploiement à mettre à l'échelle
+-   La métrique à utiliser pour le déclenchement de la mise à l'échelle
+-   La stratégie de mise à l'échelle (horizontale ou verticale)
+-   Les limites de mise à l'échelle (min et max)
+
+**Controller** Le composant principal de Keda. Il s'agit d'un contrôleur qui surveille les ScaledObjects et effectue les mises à l'échelle en fonction des metrics et des définitions de mise à l'échelle.
+
+**4. Metrics Adapter:** Un adaptateur de métrique est un composant qui convertit une métrique externe en un format que Keda peut comprendre. Keda prend en charge plusieurs adaptateurs de métriques pour différents types de sources de métriques, telles que Prometheus, Azure Monitor, et AWS CloudWatch.
+
+**5. Horizontal Pod Autoscaler (HPA):** Le HPA est un contrôleur Kubernetes intégré qui peut mettre à l'échelle automatiquement les pods en fonction de l'utilisation des ressources. Keda peut utiliser le HPA pour effectuer des mises à l'échelle horizontales.
+
+**6. External Trigger Source:** Keda peut également être déclenché par des sources externes, telles que des événements, des webhooks ou des changements de configuration.
+
+**7. Workload:** La charge de travail est l'application ou le service qui est mis à l'échelle par Keda défini dans le ScaledObject.
+
+Nous allons configurer la scalabilité de notre serveur web avec keda.
+
+Avant, commençons par installer KEDA
+
+Il vous suffit d'executer les commandes suivantes:
+
+```bash
+helm repo add kedacore https://kedacore.github.io/charts
+helm repo update
+helm install keda kedacore/keda --namespace keda --create-namespace
+```
+
+Pour installer keda sur MicroK8S c'est simple utilisé juste les commandes
+
+```bash
+microk8s enable dns 
+microk8s enable keda
+```
+Elles vont activer les extensions keda et dns.
+
+#### **Implémentation 2**
+
+![enter image description here](https://i.ibb.co/2kyH6c3/apache-keda.png)
+
+D'abord, supprimez le HPA que nous avons créé précédemment pour éviter les conflits
+
+```bash
+kubectl delete hpa php-apache-hpa -n wizy-server
+```
+
+Nous pouvons maintenant créez ScaledObject KEDA.
+
+```yaml
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: php-apache-cpu-scaledobject
+  namespace: wizy-server
+spec:
+  scaleTargetRef:
+    name: php-apache
+  triggers:
+  - type: cpu
+    metricType: AverageValue
+    metadata:
+      value: "50"
+```
+
+Dans ce `ScaledObject`, nous spécifions que nous voulons scaler le déploiement `php-apache` dans le namespace `wizy-server`. Nous configurons également un déclencheur basé sur l'utilisation de la CPU avec une limite de 50 milli-CPU (`50m`). Cela signifie que lorsque l'utilisation de la CPU dépasse cette limite, KEDA scalerait le déploiement en conséquence.
+
+**Important:** Vous devez specifier les CPU limits et requests.
+
+Il ne vous reste plus qu'à observer vos pods se multiplier.
+
+
+### **Constat**
+
+Comme nous pouvons le constater, pour une utilisation basique c'est à dire une mise à l'échelle qui se base sur des métriques de bases comme l'utilisation des ressources (CPU, mémoire), l'implémentation des deux méthodes est assez simples bien sur ici HPA gagne la comparaison car il n'a pas besoin d'installation supplémentaire.
+
+N'oubliez pas de nettoyer votre cluster en supprimant le namespace de travail
+
+```bash
+kubectl delete ns wizy-server
+```
+
+## Cas d'utilisation 2: Event-driven architecture(Consumer-RabbitMQ-Producer)
+
+![architecture-hpa](https://i.ibb.co/Fw2W3KP/rabbitmq-drawio.png)
+
+Comme vous pouvez le constater, nous utilisons une architecture orienté évènement avec un MessageBroker qui est RabbitMQ. Ici le producer va envoyer une suite de message dans une pile RabbitMQ. Puis, nous avons des consumer qui viennent récupérer les messages à tour de rôle. Afin d'éviter un ralentissement de notre application, nous souhaitons augmenter le nombre de consumer en fonction du nombre de requête dans la file. Comme mentionné plus haut, sur k8s nous avons deux solutions le HPA et le KEDA.
 
 Déjà, mettons notre application en place:
 
@@ -29,13 +239,13 @@ Déjà, mettons notre application en place:
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: autoscale-pdf-generator
+  name: eda-rabbitmq
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: rabbitmq
-  namespace: autoscale-pdf-generator
+  namespace: eda-rabbitmq
 spec:
   selector:
       app: rabbitmq
@@ -51,7 +261,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: rabbitmq
-  namespace: autoscale-pdf-generator
+  namespace: eda-rabbitmq
 spec:
   serviceName: rabbitmq
   replicas: 1
@@ -71,7 +281,7 @@ spec:
             - containerPort: 15672
 ```
 
-Ce fichier nous permet de déployer Rabbitmq avec un statefullset et de l'exposer via un service sur le port 5672 dans le namespace autoscale-pdf-generator.
+Ce fichier nous permet de déployer Rabbitmq avec un statefullset et de l'exposer via un service sur le port 5672 dans le namespace eda-rabbitmq.
 
 Déployons rabbitmq avec la commande:
 
@@ -82,7 +292,7 @@ kubectl apply -f rabbitmq.yaml
 Rassurez-vous que tout c'est bien passé en observant le statut des pods:
 
 ```bash
-kubectl get pods -n autoscale-pdf-generator
+kubectl get pods -n eda-rabbitmq
 ```
 
 Si tous les pods sont en running, alors rabbitmq est opérationnel dans votre cluster.
@@ -98,7 +308,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: rabbitmq-consumer
-  namespace: autoscale-pdf-generator
+  namespace: eda-rabbitmq
   labels:
     app: rabbitmq-consumer
 spec:
@@ -117,10 +327,10 @@ spec:
           command:
             - receive
           args:
-            - "amqp://rabbitmq.autoscale-pdf-generator.svc.cluster.local:5672"
+            - "amqp://rabbitmq.eda-rabbitmq.svc.cluster.local:5672"
        
 ```
-Puis un producer dont le role sera de remplir la file. Créez un fichier *producer.yaml* avec le contenu suivant:
+Puis un producer dont le rôle sera de remplir la file. Créez un fichier *producer.yaml* avec le contenu suivant:
 
 
 ```yaml
@@ -128,7 +338,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: rabbitmq-producer
-  namespace: autoscale-pdf-generator
+  namespace: eda-rabbitmq
   labels:
     app: rabbitmq-producer
 spec:
@@ -147,7 +357,7 @@ spec:
           command:
             [
               "send",
-              "amqp://rabbitmq.autoscale-pdf-generator.svc.cluster.local:5672",
+              "amqp://rabbitmq.eda-rabbitmq.svc.cluster.local:5672",
               "300",]
 ```
 
@@ -161,93 +371,27 @@ kubectl apply -f producer.yaml
 Assurez vous que les pods sont en running
 
 ```bash
-kubectl get pods
+kubectl get pods -n eda-rabbitmq
 ```
 
 Notre application déployée, configurons sa mise en échelle
 
-
-## **HPA: la solution native**
-
-Le Horizontal Pod Autoscaler (HPA) fonctionne en surveillant les métriques spécifiées, telles que l'utilisation du CPU, de la mémoire ou même des métriques personnalisées stockés dans une base de données comme Prometheus. Si la charge de travail augmente au-delà d'un seuil défini, le HPA augmentera le nombre de pods pour gérer la charge supplémentaire. De même, si la charge diminue, il peut réduire le nombre de pods pour économiser des ressources.
-
-### Implémentation
+### HPA
 
 Pour atteindre cette objectif avec HPA, nous devons configurer  notre système comme ceci:
 
 ![hpa-custom](https://i.ibb.co/XVMGnj1/rabbit-hpa.png)
 
-**Explication:**aRabbitMQ va exposer des métriques qui seront stockées dans Prometheus. La HPA exploitera donc ces métriques pour mettre en échelle notre application via sa fonctionnalité Custom Metrics. On aura également un dashboard grafana pour observer l'évolution des messages dans la file.
+**Explication:** RabbitMQ va exposer des métriques qui seront stockées dans Prometheus. La HPA exploitera donc ces métriques pour mettre en échelle notre application via sa fonctionnalité Custom Metrics. On aura également un dashboard grafana pour observer l'évolution des messages dans la file.
 
-Comme vous pouvez le constater, l'implémentation de cette architecture est complexe
+D'expérience l'implémentation de cette architecture est complexe avec des composants peu stables.
 
+## **KEDA**
 
-## **KEDA: la solution miracle**
+L'implémentation avec keda est moins complexe qu'avec un HPA car KEDA dispose dune variété de Trigger qui vont nous permettre de mettre à l'échelle notre application avec un minimum de configuration entre autre rabbitMQ.
 
-![enter image description here](https://i.ibb.co/3Mhxwng/keda-arch.png)
+### **Implémentation 3**
 
-C'est là que KEDA, l'acronyme pour Kubernetes-based Event-Driven Autoscaling, entre en jeu comme une solution vraiment intéressante. KEDA offre une approche basée sur des événements pour ajuster automatiquement l'échelle des applications, offrant ainsi une réactivité dynamique aux changements dans la charge de travail.
-
-Les composant principaux d'une architecture KEDA sont les suivants:
-
-**ScaledObject:** Un ScaledObject est une ressource CRD (Custom Resource Definition) définie par Keda. Il représente un déploiement Kubernetes que Keda peut mettre à l'échelle. Un ScaledObject spécifie :
-
--   Le nom du déploiement à mettre à l'échelle
--   La métrique à utiliser pour le déclenchement de la mise à l'échelle
--   La stratégie de mise à l'échelle (horizontale ou verticale)
--   Les limites de mise à l'échelle (min et max)
-
-**Controller** Le composant principal de Keda. Il s'agit d'un contrôleur qui surveille les ScaledObjects et effectue les mises à l'échelle en fonction des metrics et des définitions de mise à l'échelle.
-
-**4. Metrics Adapter:** Un adaptateur de métrique est un composant qui convertit une métrique externe en un format que Keda peut comprendre. Keda prend en charge plusieurs adaptateurs de métriques pour différents types de sources de métriques, telles que Prometheus, Azure Monitor, et AWS CloudWatch.
-
-**5. Horizontal Pod Autoscaler (HPA):** Le HPA est un contrôleur Kubernetes intégré qui peut mettre à l'échelle automatiquement les pods en fonction de l'utilisation des ressources. Keda peut utiliser le HPA pour effectuer des mises à l'échelle horizontales.
-
-**6. External Trigger Source:** Keda peut également être déclenché par des sources externes, telles que des événements, des webhooks ou des changements de configuration.
-
-**7. Workload:** La charge de travail est l'application ou le service qui est mis à l'échelle par Keda défini dans le ScaledObject.
-
-**Fonctionnement de Keda:**
-
-2.  Un ScaledObject est défini pour un déploiement Kubernetes.
-4.  Keda surveille la métrique spécifiée dans le ScaledObject via l'adaptateur de métrique.
-6.  Lorsque la métrique atteint un seuil défini, Keda déclenche une mise à l'échelle.
-8.  Keda peut utiliser le HPA pour effectuer une mise à l'échelle horizontale du déploiement.
-10.  Keda peut également être déclenché par des sources externes pour effectuer des mises à l'échelle.
-
-### Pourquoi utiliser KEDA
-
-1.  **Adaptabilité aux Événements :**  Dans notre cas, KEDA  peut tirer profit des événements, comme les messages dans une file d'attente RabbitMQ. Cette approche orientée événements permet à KEDA d'ajuster automatiquement le nombre de pods en fonction de l'activité des messages, assurant ainsi une évolutivité adaptée.
-    
-2.  **Optimisation des Ressources et réduction des couts** Les pods peuvent être déployés ou retirés de manière dynamique, s'ajustant aux besoins réels, réduisant ainsi le gaspillage des ressources et maximisant l'efficacité opérationnelle.
-    
-3.  **Facilité de Configuration :** L'une de ses grandes forces est qu'il s'intègre naturellement avec les déploiements existants, sans nécessiter de changements majeurs dans le code de l'application. Cela simplifie grandement la mise en œuvre de l'autoscaling, rendant la solution robuste et facile à adopter.
-   
-### **Implémentation de KEDA**
-
-#### Installation 
-
-- keda avec helm
-
-Il vous suffit d'executer les commandes suivantes:
-
-```bash
-helm repo add kedacore https://kedacore.github.io/charts
-helm repo update
-helm install keda kedacore/keda --namespace keda --create-namespace
-```
-
-Pour installer keda sur MicroK8S c'est simple utilisé juste les commandes
-
-```bash
-microk8s enable dns 
-microk8s enable keda
-```
-Elles vont activer les extensions keda et dns.
-
-- Configuration keda
-
-Maintenant, nous allons entrer dans le vif du sujet en configuration keda
 
 Créer un fichier keda-config.yaml avec le contenu suivant:
 
@@ -256,16 +400,16 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: rabbitmq-consumer-secret
-  namespace: autoscale-pdf-generator
+  namespace: eda-rabbitmq
 data:
-  RabbitMqHost: YW1xcDovL3JhYmJpdG1xLmF1dG9zY2FsZS1wZGYtZ2VuZXJhdG9yLnN2Yy5jbHVzdGVyLmxvY2FsOjU2NzI=
+  RabbitMqHost: YW1xcDovL3JhYmJpdG1xLmVkYS1yYWJiaXRtcS5zdmMuY2x1c3Rlci5sb2NhbDo1Njcy
 
 ---
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
   name: rabbitmq-consumer
-  namespace: default
+  namespace: eda-rabbitmq
 spec:
   scaleTargetRef:
     name: rabbitmq-consumer
@@ -284,7 +428,7 @@ apiVersion: keda.sh/v1alpha1
 kind: TriggerAuthentication
 metadata:
   name: rabbitmq-consumer-trigger
-  namespace: default
+  namespace: eda-rabbitmq
 spec:
   secretTargetRef:
     - parameter: host
@@ -301,17 +445,17 @@ Ce fichier va créer:
 Déployons nos configurations avec la commande 
 
 ```bash
-microk8s kubectl apply -f keda-config.yaml
+kubectl apply -f keda-config.yaml
 ```
 
 Il ne nous reste plus qu'à observer keda mettre notre déployement à l'echelle avec la commande:
 
 ```shell
-kubectl get deployment rabbitmq-consumer --watch
+kubectl get deployment rabbitmq-consumer -n eda-rabbitmq --watch
 ```
 
 Vous remarquerez l'augmentation du nombre de pods.
 
 ## **HPA vs KEDA**
 
-HPA reste un outil puissant mais KEDA vient ajouter une couche d'abstraction qui nous permet de configurer facilement la scalabilité automatique de notre application.
+HPA reste un outil puissant mais KEDA vient ajouter une couche d'abstraction qui nous permet de configurer facilement la scalabilité automatique de notre application. Ce pendant pour des besoins très poussés HPA reste une option incontournable. 
