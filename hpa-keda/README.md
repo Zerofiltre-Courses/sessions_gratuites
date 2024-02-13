@@ -85,9 +85,9 @@ Notre serveur prêt, nous allons le mettre à l'échelle en utilisant nos deux m
 
 ### **HPA: la solution native**
 
-![enter image description here](https://i.ibb.co/nm9qRBK/hpa-arch.png)
+![enter image description here](https://i.ibb.co/rMjYRfz/hpa-architecture-drawio.png)
 
-Le Horizontal Pod Autoscaler (HPA) fonctionne en surveillant les métriques spécifiées, telles que l'utilisation du CPU, de la mémoire ou même des métriques personnalisées stockés dans une base de données comme Prometheus. Si la charge de travail augmente au-delà d'un seuil défini, le HPA augmentera le nombre de pods pour gérer la charge supplémentaire. De même, si la charge diminue, il peut réduire le nombre de pods pour économiser des ressources.
+Le HorizontalPodAutoscaler (HPA) fonctionne en surveillant les métriques spécifiées, telles que l'utilisation du CPU, de la mémoire ou même des métriques personnalisées stockés dans une base de données comme Prometheus. Si la charge de travail augmente au-delà d'un seuil défini, le HPA augmentera le nombre de pods pour gérer la charge supplémentaire. De même, si la charge diminue, il peut réduire le nombre de pods pour économiser des ressources.
 
 #### **Implémentation 1**
 
@@ -96,7 +96,6 @@ Le Horizontal Pod Autoscaler (HPA) fonctionne en surveillant les métriques spé
 Dans le fichier *apache-server.yaml*, ajoutez le code suivant:
 
 ```yaml
----
 apiVersion: autoscaling/v1
 kind: HorizontalPodAutoscaler
 metadata:
