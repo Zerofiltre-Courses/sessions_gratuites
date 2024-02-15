@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-reverse-proxy
+  namespace: loadtesting
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:latest
+        ports:
+        - containerPort: 80
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+          requests:
+            memory: "64Mi"
+            cpu: "250m"
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+      - name: nginx-exporter
+        image: 'nginx/nginx-prometheus-exporter:0.10.0'
+        args:
+          - '-nginx.scrape-uri=http://localhost/nginx_status'
+        resources:
+          limits:
+            memory: 128Mi
+            cpu: 500m
+        ports:
+          - containerPort: 9113
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: nginx-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: loadtesting
+data:
+  nginx.conf: |
+    events {
+      worker_connections  1024;
+    }
+    http {
+      server {
+        listen 80;
+        location / {
+          proxy_pass http://nodejs-service:3000; # Remplacez nodejs-service par le nom du service de notre app Node.js
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+        }
+        location /nginx_status {
+          stub_status;
+          allow 127.0.0.1;
+          deny all;
+        }
+      }
+    }
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+  namespace: loadtesting
+spec:
+  selector:
+    app: nginx
+  ports:
+    - protocol: TCP
+      port: 80
+      name: nginx-http
+      targetPort: 80
+    - protocol: TCP
+      port: 9113
+      name: nginx-exporter
+      targetPort: 9113
+  type: ClusterIP
