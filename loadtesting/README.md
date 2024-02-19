@@ -255,7 +255,7 @@ metadata:
   name: k6-loadtest
   namespace: loadtesting
 spec:
-  parallelism: 4
+  parallelism: 1
   script:
     configMap:
       name: k6-loadtest
@@ -275,3 +275,15 @@ Vérifiez que le test de charge est en cours d'exécution en vérifiant le statu
 ```bash
 kubectl get pods -n loadtesting
 ```
+
+Afficher les logs du pods avec la nomenclature: "k6-loadtest-1-*" pour obtenir le rapport de test.
+
+Il devrait ressembler à quelque chose comme ceci:
+
+![enter image description here](https://i.ibb.co/4tch551/image.png)
+
+Amusez-vous à faire varier le nombre de replicas de vos composants pour observer les variations des métriques notamment 
+
+- **http_req_duration**:  pour la durée des requêtes 
+
+Ci-joint dans le repo, vous trouverez un fichier contenant nos différents rapports.
