@@ -1,39 +1,29 @@
-# Introduction
+# Tests de charge distribués avec K6
 
-  
+# Introduction
 
 Dans l'univers numérique effervescent d'aujourd'hui, la capacité à maintenir des systèmes informatiques résilients face à une charge massive est devenue une pierre angulaire de la compétitivité et de la satisfaction client. Imaginez un monde où une soudaine vague d'intérêt pour votre application ou service en ligne entraîne un effondrement catastrophique de votre infrastructure, laissant les utilisateurs frustrés et votre réputation en lambeaux. Pour éviter ce cauchemar, il est essentiel de concevoir des systèmes capables de s'adapter et de prospérer face à des demandes de plus en plus nombreuses.
 
   
-
-Dans cet article, nous plongerons dans l'art de la construction d'un système robuste capable de gérer une charge massive avec grâce et efficacité. En combinant la puissance de Kubernetes, un orchestrateur de conteneurs de premier plan, avec les performances impressionnantes de Node.js et la fiabilité inébranlable de PostgreSQL, nous bâtirons un édifice numérique à toute épreuve. Notre objectif est clair : permettre à votre application de briller même sous les feux de la rampe les plus intenses.
+Dans cet article, nous plongerons dans l'art de tester la robustesse d'un système en d'autres termes, s'il est capable de gérer une charge massive avec grâce et efficacité. En combinant la puissance de Kubernetes, un orchestrateur de conteneurs de premier plan. Notre objectif est clair : vous apprendre à vous assurer que votre application peut briller même sous les feux de la rampe les plus intenses.
 
   
 
 # Prérequis
 
-  
-
-Avant de plonger dans la construction de notre système capable de gérer une charge massive, assurez-vous d'avoir les éléments suivants en place :
-
-  
+Avant de commencer les tests de notre systèmes notre système, assurez-vous d'avoir les éléments suivants en place :
 
 - Connaissance de base de Kubernetes : Une compréhension élémentaire des concepts de base de Kubernetes est essentielle pour suivre ce guide. Assurez-vous de comprendre les notions telles que les Pods, les Deployments, les Services, et les Persistent Volume Claims (PVC).
 
-  
-
 - Accès à un cluster Kubernetes : Vous aurez besoin d'un cluster Kubernetes opérationnel pour déployer nos composants. Cela peut être un cluster local (comme minikube) ou un cluster géré dans le cloud (comme Google Kubernetes Engine, Amazon EKS, ou Microsoft AKS).
 
-  
-
+ 
 - Installation de kubectl : Assurez-vous d'avoir kubectl, l'outil en ligne de commande Kubernetes, installé et configuré pour interagir avec votre cluster Kubernetes.
 
   
-
 - Connaissance de Node.js : Une compréhension de base du langage JavaScript et de l'environnement d'exécution Node.js sera utile pour comprendre et modifier le code de notre application web.
 
   
-
 - Accès à Docker Hub (ou à n'importe quel autre registre) : Si vous souhaitez suivre la procédure de construction et de publication de notre application Node.js sur Docker Hub, assurez-vous d'avoir un compte Docker Hub et les autorisations nécessaires pour pousser des images Docker.
 
   
@@ -191,17 +181,21 @@ kubectl get pods -n loadtesting
 
 # Test de charge avec k6
 
+![enter image description here](https://i.ibb.co/5cNfMH4/k6-architectre.jpg)
+
 Notre architecture installé commençons les tests de charge avec k6s
 
 K6 est un outil moderne et flexible pour les tests de charge et de performance, offrant une approche simple mais puissante pour simuler le trafic utilisateur sur les applications web et les API. Grâce à sa syntaxe JavaScript intuitive et à sa structure de test déclarative, K6 permet aux équipes de développement et d'exploitation de créer facilement des scénarios de test personnalisés pour évaluer les performances de leurs systèmes.
 
+
+
 Parmi les principales fonctionnalités de K6, on trouve :
 
-- Facilité d'utilisation : Avec sa syntaxe JavaScript simple et sa structure de test intuitive, K6 permet aux utilisateurs de créer rapidement des tests de charge sans avoir besoin de compétences spécialisées en ingénierie de performance.
-- Scénarios flexibles : K6 prend en charge la création de scénarios de test flexibles, permettant aux utilisateurs de simuler différents comportements d'utilisateur, tels que les sessions d'utilisateur, les interactions avec les formulaires et les requêtes d'API.
-- Gestion avancée des charges : Avec K6, les utilisateurs peuvent contrôler finement la charge générée lors des tests, en ajustant le nombre de virtual users, les délais entre les requêtes et d'autres paramètres de charge pour simuler des conditions réalistes.
-- Analyse des résultats : K6 offre des fonctionnalités robustes d'analyse des résultats, y compris des graphiques en temps réel, des métriques de performance détaillées et des rapports personnalisables, permettant aux utilisateurs de comprendre facilement les performances de leur application et d'identifier les goulots d'étranglement.
-- Intégration avec CI/CD : K6 peut être facilement intégré dans les pipelines CI/CD, permettant aux équipes de tester automatiquement les performances de leurs applications à chaque étape du cycle de développement.
+- **Facilité d'utilisation** : Avec sa syntaxe JavaScript simple et sa structure de test intuitive, K6 permet aux utilisateurs de créer rapidement des tests de charge sans avoir besoin de compétences spécialisées en ingénierie de performance.
+- **Scénarios flexibles** : K6 prend en charge la création de scénarios de test flexibles, permettant aux utilisateurs de simuler différents comportements d'utilisateur, tels que les sessions d'utilisateur, les interactions avec les formulaires et les requêtes d'API.
+- **Gestion avancée des charges** : Avec K6, les utilisateurs peuvent contrôler finement la charge générée lors des tests, en ajustant le nombre de virtual users, les délais entre les requêtes et d'autres paramètres de charge pour simuler des conditions réalistes.
+- **Analyse des résultats** : K6 offre des fonctionnalités robustes d'analyse des résultats, y compris des graphiques en temps réel, des métriques de performance détaillées et des rapports personnalisables, permettant aux utilisateurs de comprendre facilement les performances de leur application et d'identifier les goulots d'étranglement.
+- **Intégration avec CI/CD** : K6 peut être facilement intégré dans les pipelines CI/CD, permettant aux équipes de tester automatiquement les performances de leurs applications à chaque étape du cycle de développement.
 
 ## Installation de k6 sur notre cluster
 
@@ -286,4 +280,5 @@ Amusez-vous à faire varier le nombre de replicas de vos composants pour observe
 
 - **http_req_duration**:  pour la durée des requêtes 
 
-Ci-joint dans le repo, vous trouverez un fichier contenant nos différents rapports.
+
+Rendez-vous dans le fichier *test-rapport.txt*  dans le dossier *loadtesting* du référentiel github. Il contient notre différents rapports de tests en fonction des paramètres comme le nombre d'utilisateur et le nombre de composants des réplicas.
