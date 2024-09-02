@@ -1,0 +1,120 @@
+
+version: '3.9'
+
+networks:
+  default:
+    name: opentelemetry-demo
+    driver: bridge
+
+services:
+
+  # zerofiltre redis database
+  redis:
+    image: redis:latest
+    container_name: zerofiltre-local-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  # zerofiltre mysql database
+  mysql:
+    image: mysql:8.0
+    container_name: mysql-container
+    environment:
+      MYSQL_ROOT_PASSWORD: blog_api_dev
+      MYSQL_DATABASE: blogapidb_dev
+      MYSQL_USER: blog_api_dev
+      MYSQL_PASSWORD: blog_api_dev
+
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./initV.sql:/docker-entrypoint-initdb.d/initV.sql
+
+
+  # zerofiltre backend
+  zerofiltre-backend:
+    image: imzerofiltre/zerofiltretech-blog:opentelemetry-demo-1
+    container_name: zerofiltre-backend
+    deploy:
+      resources:
+        limits:
+          memory: 500M
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otelcol:4317
+      - OTEL_SERVICE_NAME=zerofiltre-backend
+      - OTEL_METRICS_EXPORTER=none
+      - OTEL_LOGS_EXPORTER=none
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/blogapidb_dev
+      - SPRING_REDIS_HOST=redis
+    depends_on:
+      otelcol:
+        condition: service_started
+      mysql:
+        condition: service_started
+      redis:
+        condition: service_started
+
+
+  # OpenTelemetry Collector
+  otelcol:
+    image: otel/opentelemetry-collector-contrib
+    container_name: otelcol
+    deploy:
+      resources:
+        limits:
+          memory: 100M
+    restart: unless-stopped
+    command: [ "--config=/etc/otelcol-config.yml"]
+    depends_on:
+      tempo:
+        condition: service_started
+    volumes:
+      - ./otelcol/otelcol-config.yml:/etc/otelcol-config.yml
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+
+
+  # traces backend
+  tempo:
+    image: grafana/tempo
+    container_name: tempo
+    command: [ "-config.file=/etc/tempo.yaml" ]
+    deploy:
+      resources:
+        limits:
+          memory: 300M
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+      - "9095:9095"
+    volumes:
+      - ./tempo/tempo-config.yml:/etc/tempo.yaml
+      - tempo-data:/var/tempo
+
+  # grafana for visualization
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    deploy:
+      resources:
+        limits:
+          memory: 100M
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+volumes:
+  mysql-data:
+  grafana-data:
+  tempo-data:

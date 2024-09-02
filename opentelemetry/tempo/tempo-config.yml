@@ -1,0 +1,27 @@
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9095
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"
+ingester:
+  trace_idle_period: "10m"
+  max_block_duration: "15m"
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/traces
+
+compactor:
+  compaction:
+    block_retention: 2h
+
+usage_report:
+  reporting_enabled: false
