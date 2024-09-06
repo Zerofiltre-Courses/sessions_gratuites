@@ -35,13 +35,13 @@ services:
 
   # zerofiltre backend
   zerofiltre-backend:
-    image: imzerofiltre/zerofiltretech-blog:opentelemetry-demo-1
+    image: imzerofiltre/zerofiltretech-blog:opentelemetry-demo-2
     container_name: zerofiltre-backend
     deploy:
       resources:
         limits:
           memory: 500M
-    restart: unless-stopped
+#    restart: unless-stopped
     ports:
       - "80:80"
     environment:
